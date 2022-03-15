@@ -19,8 +19,14 @@ function upload() {
     twine upload $(ls -tr dist/*whl | tail -1) || true
 }
 
-function k8s-clean-evicted() {
-    kubectl get po --all-namespaces -o json | jq  '.items[] | select(.status.reason!=null) | select(.status.reason | contains("Evicted")) | "kubectl delete po \(.metadata.name) -n \(.metadata.namespace)"' | xargs -n 1 bash -c
+function k8s-clean() {
+    state=${1:-Evicted}
+    set -x
+    kubectl get po --all-namespaces -o json | jq  '.items[] | select(.status.reason!=null) | select(.status.reason | contains("'$state'")) | "kubectl delete po \(.metadata.name) -n \(.metadata.namespace)"' | xargs -n 1 bash -c
+}
+
+function k8s-clean-state() {
+    kubectl get pods | awk '/'${1:?state}'/ {print $1}' | xargs kubectl delete pods
 }
 
 function prep {
@@ -38,8 +44,23 @@ function color {
     '
 }
 
-function evicted-clean() {
-    kubectl get po  --all-namespaces -o json | jq  '.items[] | select(.status.reason!=null) | select(.status.reason | contains("Evicted")) | "kubectl delete po \(.metadata.name) -n \(.metadata.namespace)"' | xargs -n 1 bash -c
+function docker-build-canonical {
+    org=${1:-odahub}
+    name=$(basename $PWD)
+    tag=$(git describe --always --tags | sed 's/[^0-9a-zA-Z]/_/g')
+    image=$org/$name:$tag
+    docker build -t $image .
+}
+
+function docker-run-canonical {
+    args=$@
+    org=odahub
+    name=$(basename $PWD)
+    tag=$(git describe --always --tags | sed 's/[^0-9a-zA-Z]/_/g')
+    image=$org/$name:$tag
+    docker-build-canonical
+
+    docker run $@ -it $image
 }
 
 $@
